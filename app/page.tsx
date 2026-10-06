@@ -259,7 +259,7 @@ export default function Home() {
 
 function PlanView({ plan, colorOf }: { plan: FinalPlan; colorOf: (n: string) => string }) {
   const f = plan.fairness;
-  const chosen = plan.stops.length ? plan.stops.reduce((s, x) => s + x.groupScore, 0) / plan.stops.length : 0;
+  const chosen = plan.chosenFit ?? 0;
   return (
     <div>
       <div className="summary">
@@ -295,7 +295,7 @@ function PlanView({ plan, colorOf }: { plan: FinalPlan; colorOf: (n: string) => 
           ))}
           {plan.baselineFit !== undefined && (
             <p className="meta" style={{ marginTop: 10 }}>
-              Group score {Math.round(chosen * 100)} vs. {Math.round(plan.baselineFit * 100)} for a taste-blind “top places” list in the same categories.
+              Least-misery group score {Math.round(chosen * 100)} vs. {Math.round(plan.baselineFit * 100)} for the most popular venue in the same categories (taste-blind).
             </p>
           )}
         </div>

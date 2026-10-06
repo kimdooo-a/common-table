@@ -56,6 +56,8 @@ export interface FinalPlan {
   stops: StopOut[];
   fairness: { perPerson: Record<string, number>; evenness: number; groupFit: number; worstOff: string; rebalanced: boolean };
   baselineFit?: number;
+  /** group score of the chosen stops, over the same stops that have a baseline */
+  chosenFit?: number;
   story: string;
   storySource: "gemini" | "template";
   calls: { total: number; cached: number; endpoints: Record<string, number> };
@@ -234,7 +236,7 @@ export async function runAgent(req: PlanRequest, emit: (e: AgentEvent) => void, 
     const pct = toPercentiles(raw, ids);
     const places = new Map<string, QlooEntity>([...baseline, ...pool].map((e) => [e.entity_id, e]));
     slotInputs.push({ key: s.template.key, pool: pool.map(toCandidate), pct });
-    slotMeta[s.template.key] = { title: s.template.title, option: chosen, places, baseline: baseline.filter((b) => !pool.some((p) => p.entity_id === b.entity_id)) };
+    slotMeta[s.template.key] = { title: s.template.title, option: chosen, places, baseline };
     emit({
       type: "step",
       id: `slot-${s.template.key}`,
@@ -277,7 +279,9 @@ export async function runAgent(req: PlanRequest, emit: (e: AgentEvent) => void, 
   });
 
   // 7. Compare with a taste-blind plan --------------------------------------------------
+  // Both averages are taken over the same stops, so the comparison is like-for-like.
   const baselineScores: number[] = [];
+  const pairedChosen: number[] = [];
   const stops: StopOut[] = picks.map((p) => {
     const meta = slotMeta[p.slot];
     const e = meta.places.get(p.candidate.id)!;
@@ -286,12 +290,16 @@ export async function runAgent(req: PlanRequest, emit: (e: AgentEvent) => void, 
     let baselineOut: StopOut["baseline"];
     if (b) {
       baselineScores.push(groupScore(slotIn.pct, b.entity_id));
-      baselineOut = { name: b.name, perPerson: Object.fromEntries(names.map((n) => [n, slotIn.pct[n].get(b.entity_id) ?? 0])) };
+      pairedChosen.push(groupScore(slotIn.pct, p.candidate.id));
+      if (b.entity_id !== p.candidate.id) {
+        baselineOut = { name: b.name, perPerson: Object.fromEntries(names.map((n) => [n, slotIn.pct[n].get(b.entity_id) ?? 0])) };
+      }
     }
     return toStop(p, e, meta.title, meta.option.label, shared, resolved, baselineOut);
   });
-  const chosenFit = picks.length ? picks.reduce((s, p) => s + groupScore(slotInputs.find((x) => x.key === p.slot)!.pct, p.candidate.id), 0) / picks.length : 0;
-  const baselineFit = baselineScores.length ? baselineScores.reduce((a, b) => a + b, 0) / baselineScores.length : undefined;
+  const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+  const chosenFit = avg(pairedChosen);
+  const baselineFit = baselineScores.length ? avg(baselineScores) : undefined;
   if (baselineFit !== undefined) {
     emit({
       type: "step",
@@ -322,7 +330,8 @@ export async function runAgent(req: PlanRequest, emit: (e: AgentEvent) => void, 
     sharedTags: shared,
     stops,
     fairness,
-    baselineFit: baselineFit === undefined ? undefined : baselineFit,
+    baselineFit,
+    chosenFit: baselineFit === undefined ? undefined : chosenFit,
     story,
     storySource: source,
     calls: { total: client.calls.length, cached: client.calls.filter((c) => c.cached).length, endpoints },
