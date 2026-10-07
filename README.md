@@ -1,5 +1,7 @@
 # Common Table
 
+**Live demo:** https://common-table-topaz.vercel.app
+
 **Plans for people who don't like the same things.**
 
 Common Table is a group-outing agent built on [Qloo](https://www.qloo.com/)'s Taste AI graph.
